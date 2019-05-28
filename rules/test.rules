@@ -1,0 +1,7 @@
+(and
+	(or
+	    (not (eq "mountdev" "mountdev"))
+	    (eq "udev" "udev")
+	)
+	(run "echo HERE")
+)
