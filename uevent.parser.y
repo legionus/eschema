@@ -31,13 +31,11 @@
 #include <fcntl.h>
 #include <error.h>
 #include <errno.h>
+#include <assert.h>
 
 #include "uevent.parser.h"
 #include "uevent.scanner.h"
 #include "uevent.h"
-
-struct s_expr *stack[1024];
-int stack_next = 0;
 
 struct atom *root = NULL;
 
@@ -47,31 +45,6 @@ int linenumber = 1;
 
 int yyerror(yyscan_t scanner, const char *s);
 
-static void
-append_atom(struct atom *a)
-{
-	struct s_expr *last, *new;
-
-	if (!root) {
-		root = a;
-		return;
-	}
-
-	if (!stack[stack_next-1]->atom) {
-		stack[stack_next-1]->atom = a;
-		return;
-	}
-
-	last = stack[stack_next-1];
-	while (last->next)
-		last = last->next;
-
-	new = calloc(1, sizeof(struct s_expr));
-	new->atom = a;
-
-	last->next = new;
-}
-
 %}
 
 %token ERROR LEFT_BRACKET SYMBOL STRING NUMBER BOOL RIGHT_BRACKET
@@ -79,48 +52,63 @@ append_atom(struct atom *a)
 %union {
 	long long int num;
 	char *str;
+	struct atom *atom;
 }
 
 %type <str> STRING
 %type <num> NUMBER
 %type <num> BOOL
 %type <str> SYMBOL
+%type <atom> input
+%type <atom> s_expr
+%type <atom> arg
+%type <atom> args
 
 %%
 input		:
-		| input s_expr
-		;
-s_expr		: start_expr args end_expr
-		;
-start_expr	: LEFT_BRACKET
 		{
 			struct atom *a = calloc(1, sizeof(struct atom));
-
 			a->t = T_S_EXPR;
-			a->v.s_expr = calloc(1, sizeof(struct s_expr));
-
-			append_atom(a);
-
-			stack[stack_next] = a->v.s_expr;
-			stack_next++;
+			a->v.s_expr = NULL;
+			root = a;
+			$$ = a;
 		}
-end_expr	: RIGHT_BRACKET
+		| s_expr input
 		{
-			if (!stack[stack_next-1]->atom) {
-				yyerror(scanner, "empty expression");
-				exit(EXIT_FAILURE);
-			}
-			if (stack[stack_next-1]->atom->t != T_SYMBOL && stack[stack_next-1]->atom->t != T_S_EXPR) {
-				char *err = NULL;
-				asprintf(&err, "unexpected type of first argument. expected 'symbol', but got '%s'", get_atom_type(stack[stack_next-1]->atom->t));
-				yyerror(scanner, err);
-				free(err);
-				exit(EXIT_FAILURE);
-			}
-			stack_next--;
+			assert($2->t == T_S_EXPR);
+			struct s_expr *s = calloc(1, sizeof(struct s_expr));
+			s->atom = $1;
+			s->next = $2->v.s_expr;
+			$2->v.s_expr = s;
+			$$ = $2;
 		}
+		;
+s_expr		: LEFT_BRACKET args RIGHT_BRACKET
+		{
+			$$ = $2;
+		}
+		;
 args		: arg
+		{
+			// (cons arg '())
+			struct s_expr *s = calloc(1, sizeof(struct s_expr));
+			s->atom = $1;
+			s->next = NULL;
+			struct atom *a = calloc(1, sizeof(struct atom));
+			a->t = T_S_EXPR;
+			a->v.s_expr = s;
+			$$ = a;
+		}
 		| arg args
+		{
+			// (cons arg args)
+			assert($2->t == T_S_EXPR);
+			struct s_expr *s = calloc(1, sizeof(struct s_expr));
+			s->atom = $1;
+			s->next = $2->v.s_expr;
+			$2->v.s_expr = s;
+			$$ = $2;
+		}
 		;
 arg		: s_expr
 		| SYMBOL
@@ -128,32 +116,28 @@ arg		: s_expr
 			struct atom *a = calloc(1, sizeof(struct atom));
 			a->t = T_SYMBOL;
 			a->v.str = $1;
-
-			append_atom(a);
+			$$ = a;
 		}
 		| STRING
 		{
 			struct atom *a = calloc(1, sizeof(struct atom));
 			a->t = T_STRING;
 			a->v.str = $1;
-
-			append_atom(a);
+			$$ = a;
 		}
 		| NUMBER
 		{
 			struct atom *a = calloc(1, sizeof(struct atom));
 			a->t = T_NUMBER;
 			a->v.num = $1;
-
-			append_atom(a);
+			$$ = a;
 		}
 		| BOOL
 		{
 			struct atom *a = calloc(1, sizeof(struct atom));
 			a->t = T_BOOL;
 			a->v.num = $1;
-
-			append_atom(a);
+			$$ = a;
 		}
 		;
 %%
