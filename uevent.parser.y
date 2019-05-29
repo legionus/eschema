@@ -60,30 +60,44 @@ int yyerror(yyscan_t scanner, const char *s);
 %type <num> BOOL
 %type <str> SYMBOL
 %type <atom> input
-%type <atom> s_expr
+%type <atom> pair
 %type <atom> arg
 %type <atom> args
 
 %%
 input		:
 		{
+			struct pair *s = calloc(1, sizeof(struct pair));
+			s->car = NULL;
+			s->cdr = NULL;
+
 			struct atom *a = calloc(1, sizeof(struct atom));
 			a->t = T_BEGIN;
-			a->v.s_expr = NULL;
+			a->v.pair = s;
+
 			root = a;
+
 			$$ = a;
 		}
-		| s_expr input
+		| input pair
 		{
-			assert($2->t == T_S_EXPR || $2->t == T_BEGIN);
-			struct s_expr *s = calloc(1, sizeof(struct s_expr));
-			s->atom = $1;
-			s->next = $2->v.s_expr;
-			$2->v.s_expr = s;
-			$$ = $2;
+			assert($1->t == T_PAIR || $1->t == T_BEGIN);
+			assert($1->v.pair->cdr == NULL);
+
+			struct pair *s = calloc(1, sizeof(struct pair));
+			s->car = $2;
+			s->cdr = NULL;
+
+			struct atom *a = calloc(1, sizeof(struct atom));
+			a->t = T_PAIR;
+			a->v.pair = s;
+
+			$1->v.pair->cdr = a;
+
+			$$ = a;
 		}
 		;
-s_expr		: LEFT_BRACKET args RIGHT_BRACKET
+pair		: LEFT_BRACKET args RIGHT_BRACKET
 		{
 			$$ = $2;
 		}
@@ -91,26 +105,33 @@ s_expr		: LEFT_BRACKET args RIGHT_BRACKET
 args		: arg
 		{
 			// (cons arg '())
-			struct s_expr *s = calloc(1, sizeof(struct s_expr));
-			s->atom = $1;
-			s->next = NULL;
+			struct pair *s = calloc(1, sizeof(struct pair));
+			s->car = $1;
+			s->cdr = NULL;
+
 			struct atom *a = calloc(1, sizeof(struct atom));
-			a->t = T_S_EXPR;
-			a->v.s_expr = s;
+			a->t = T_PAIR;
+			a->v.pair = s;
+
 			$$ = a;
 		}
 		| arg args
 		{
 			// (cons arg args)
-			assert($2->t == T_S_EXPR);
-			struct s_expr *s = calloc(1, sizeof(struct s_expr));
-			s->atom = $1;
-			s->next = $2->v.s_expr;
-			$2->v.s_expr = s;
-			$$ = $2;
+			assert($2->t == T_PAIR);
+
+			struct pair *s = calloc(1, sizeof(struct pair));
+			s->car = $1;
+			s->cdr = $2;
+
+			struct atom *a = calloc(1, sizeof(struct atom));
+			a->t = T_PAIR;
+			a->v.pair = s;
+
+			$$ = a;
 		}
 		;
-arg		: s_expr
+arg		: pair
 		| SYMBOL
 		{
 			struct atom *a = calloc(1, sizeof(struct atom));
@@ -204,6 +225,8 @@ read_rules(const char *rulesdir)
 		fclose(fp);
 	}
 
+	free(namelist);
+
 	return 0;
 }
 
@@ -214,19 +237,16 @@ main(int argc, char **argv)
 
 	print_atoms(root);
 	printf("\n");
-/*
+
 	struct stack *s = calloc(1, sizeof(struct stack));
 
 	atom_init(s);
 
-	struct atom *res = eval_atom(root, s);
-
-	print_atoms(res);
+	eval_atom(root, s);
 	printf("\n");
 
-	free(res);
-*/
-	free(root);
+	free_atom(root);
+	free_stack(s);
 
 	return 0;
 }

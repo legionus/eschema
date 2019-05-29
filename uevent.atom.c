@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <error.h>
+#include <assert.h>
 
 #include "uevent.h"
 
@@ -20,7 +21,7 @@ get_atom_type(enum type t)
 		case T_PROC:   return "procedure";
 		case T_STRING: return "string";
 		case T_SYMBOL: return "symbol";
-		case T_S_EXPR: return "expression";
+		case T_PAIR:   return "pair";
 	}
 	error(EXIT_FAILURE, 0, "unknown type=%d", t);
 	return "";
@@ -29,7 +30,7 @@ get_atom_type(enum type t)
 void
 print_atoms(struct atom *a)
 {
-	struct s_expr *e = NULL;
+	struct atom *n;
 
 	switch (a->t) {
 		case T_PROC:
@@ -52,23 +53,23 @@ print_atoms(struct atom *a)
 			break;
 		case T_BEGIN:
 			printf("{");
-			e = a->v.s_expr;
-			while (e) {
-				if (e != a->v.s_expr)
+			n = a->v.pair->cdr;
+			while (n) {
+				if (n != a->v.pair->cdr)
 					printf(" ");
-				print_atoms(e->atom);
-				e = e->next;
+				print_atoms(n->v.pair->car);
+				n = n->v.pair->cdr;
 			}
 			printf("}");
 			break;
-		case T_S_EXPR:
+		case T_PAIR:
 			printf("(");
-			e = a->v.s_expr;
-			while (e) {
-				if (e != a->v.s_expr)
+			n = a;
+			while (n) {
+				if (n != a)
 					printf(" ");
-				print_atoms(e->atom);
-				e = e->next;
+				print_atoms(n->v.pair->car);
+				n = n->v.pair->cdr;
 			}
 			printf(")");
 			break;
@@ -88,7 +89,7 @@ resolve_proc(char *sym, struct stack *s)
 
 	struct atom *a = calloc(1, sizeof(struct atom));
 	a->t = T_ERROR;
-	a->v.str = strdup("function not found");
+	asprintf(&a->v.str, "symbol '%s' not found", sym);
 
 	return a;
 }
@@ -96,22 +97,22 @@ resolve_proc(char *sym, struct stack *s)
 void *
 free_atom(struct atom *a)
 {
-	struct s_expr *n, *e;
+	if (!a)
+		return NULL;
 
 	switch (a->t) {
 		case T_ERROR:
 		case T_STRING:
+		case T_SYMBOL:
 			free(a->v.str);
 			break;
 		case T_BEGIN:
-		case T_S_EXPR:
-			e = a->v.s_expr;
-			while (e) {
-				n = e->next;
-				free_atom(e->atom);
-				free(e);
-				e = n;
-			}
+		case T_PAIR:
+			if (a->v.pair->car)
+				free_atom(a->v.pair->car);
+			if (a->v.pair->cdr)
+				free_atom(a->v.pair->cdr);
+			free(a->v.pair);
 			break;
 		default:
 			break;
@@ -125,7 +126,6 @@ struct atom *
 eval_atom(struct atom *a, struct stack *s)
 {
 	struct atom *n, *r;
-
 	switch (a->t) {
 		case T_BOOL:
 		case T_ERROR:
@@ -136,14 +136,35 @@ eval_atom(struct atom *a, struct stack *s)
 		case T_SYMBOL:
 			return resolve_proc(a->v.str, s);
 		case T_BEGIN:
-		case T_S_EXPR:
-			n = eval_atom(a->v.s_expr->atom, s);
+			n = a->v.pair->cdr;
+			while (n) {
+				r = eval_atom(n->v.pair->car, s);
+
+				if (r->t == T_ERROR)
+					error(EXIT_FAILURE, 0, "error: %s", r->v.str);
+
+				print_atoms(r);
+
+				if (r != n->v.pair->car)
+					free_atom(r);
+
+				n = n->v.pair->cdr;
+			}
+			return NULL;
+		case T_PAIR:
+			n = eval_atom(a->v.pair->car, s);
+
 			if (n->t == T_ERROR)
-				error(EXIT_FAILURE, 0, "error: %s", a->v.s_expr->atom->v.str);
+				error(EXIT_FAILURE, 0, "error: %s", n->v.str);
+
 			if (n->t != T_PROC)
 				error(EXIT_FAILURE, 0, "unexpected atom '%s'", get_atom_type(n->t));
-			r = n->v.proc(a->v.s_expr->next, s);
-			free_atom(n);
+
+			r = n->v.proc(a->v.pair->cdr, s);
+
+			if (n != a->v.pair->car)
+				free_atom(n);
+
 			return r;
 	}
 
@@ -173,7 +194,7 @@ register_builtin(struct stack *s, char *name, atom_proc_t proc)
 	l->next = n;
 	return 0;
 }
-
+/*
 static struct atom *
 builtin_eq(struct s_expr *expr, struct stack *s)
 {
@@ -212,31 +233,6 @@ builtin_eq(struct s_expr *expr, struct stack *s)
 	} while (e->next);
 
 	return ATOM_TRUE;
-}
-
-static struct atom *
-builtin_not(struct s_expr *expr, struct stack *s)
-{
-	struct atom *n;
-	size_t n_args = 0;
-	struct s_expr *e = expr;
-	while (e) {
-		n_args++;
-		e = e->next;
-	}
-
-	if (n_args == 0)
-		error(EXIT_FAILURE, 0, "not: more arguments required");
-
-	if (n_args > 1)
-		error(EXIT_FAILURE, 0, "not: too many arguments");
-
-	n = eval_atom(expr->atom, s);
-
-	if (n->t != T_BOOL)
-		error(EXIT_FAILURE, 0, "unexpected result. expected bool, got %s", get_atom_type(n->t));
-
-	return n->v.num ? ATOM_FALSE : ATOM_TRUE;
 }
 
 static struct atom *
@@ -307,6 +303,53 @@ builtin_run(struct s_expr *expr, struct stack *s)
 
 	return ATOM_TRUE;
 }
+*/
+
+static struct atom *
+builtin_not(struct atom *a, struct stack *s)
+{
+	struct atom *r = ATOM_FALSE;
+	struct atom *n = eval_atom(a, s);
+
+	if (n->t == T_BOOL && n->v.num)
+		r = ATOM_TRUE;
+
+	if (a != n)
+		free_atom(n);
+	return r;
+}
+
+static struct atom *
+builtin_and(struct atom *a, struct stack *s)
+{
+	struct atom *r = ATOM_TRUE;
+	struct atom *e = a;
+
+	while (e) {
+		if (e->t != T_PAIR)
+			return e;
+
+		struct atom *n = eval_atom(e->v.pair->car, s);
+
+		if (n->t == T_ERROR)
+			error(EXIT_FAILURE, 0, "error: %s", n->v.str);
+
+		if (n->t == T_BOOL) {
+			if (!n->v.num)
+				return ATOM_FALSE;
+			if (n != e->v.pair->car)
+				free_atom(n);
+		} else {
+			if (r != ATOM_TRUE)
+				free_atom(r);
+			r = n;
+		}
+
+		e = e->v.pair->cdr;
+	}
+
+	return r;
+}
 
 void
 atom_init(struct stack *s)
@@ -321,7 +364,28 @@ atom_init(struct stack *s)
 
 	register_builtin(s, "not", builtin_not);
 	register_builtin(s, "and", builtin_and);
+
+/*
 	register_builtin(s, "or", builtin_or);
 	register_builtin(s, "eq",  builtin_eq);
 	register_builtin(s, "run", builtin_run);
+*/
+}
+
+void
+free_stack(struct stack *s)
+{
+	struct procs *n, *p = s->procs;
+
+	while (p) {
+		n = p->next;
+		free_atom(p->atom);
+		free(p);
+		p = n;
+	}
+
+	free_atom(ATOM_TRUE);
+	free_atom(ATOM_FALSE);
+
+	free(s);
 }

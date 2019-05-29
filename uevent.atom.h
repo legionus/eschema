@@ -3,9 +3,9 @@
 
 struct atom;
 
-struct s_expr {
-	struct atom *atom;
-	struct s_expr *next;
+struct pair {
+	struct atom *car;
+	struct atom *cdr;
 };
 
 enum type {
@@ -16,17 +16,17 @@ enum type {
 	T_PROC,
 	T_STRING,
 	T_SYMBOL,
-	T_S_EXPR,
+	T_PAIR,
 };
 
 struct stack;
-typedef struct atom *(*atom_proc_t)(struct s_expr *, struct stack *);
+typedef struct atom *(*atom_proc_t)(struct atom *, struct stack *);
 
 union value {
 	long long int num;
 	char *str;
 	atom_proc_t proc;
-	struct s_expr *s_expr;
+	struct pair *pair;
 };
 
 struct atom {
@@ -49,6 +49,7 @@ void print_atoms(struct atom *a);
 const char *get_atom_type(enum type t);
 struct atom *eval_atom(struct atom *a, struct stack *s);
 void *free_atom(struct atom *a);
+void free_stack(struct stack *s);
 
 int register_builtin(struct stack *s, char *name, atom_proc_t proc);
 
