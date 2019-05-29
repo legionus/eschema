@@ -10,6 +10,7 @@
 
 /* Pure yyparse.  */
 %parse-param { void *scanner }
+%parse-param { struct stack *stack }
 
 %code requires {
 #include "uevent.atom.h"
@@ -43,7 +44,7 @@ struct dirent *rulefile;
 char str[4096];
 int linenumber = 1;
 
-int yyerror(yyscan_t scanner, const char *s);
+int yyerror(yyscan_t scanner, struct stack *stack, const char *s);
 
 %}
 
@@ -155,29 +156,26 @@ arg		: pair
 		}
 		| BOOL
 		{
-			struct atom *a = calloc(1, sizeof(struct atom));
-			a->t = T_BOOL;
-			a->v.num = $1;
-			$$ = a;
+			$$ = $1 != 0 ? stack->atom_true : stack->atom_false;
 		}
 		;
 %%
 
 int
-yyerror(yyscan_t scanner, const char *s)
+yyerror(yyscan_t scanner YY_ATTRIBUTE_UNUSED, struct stack *stack YY_ATTRIBUTE_UNUSED, const char *s)
 {
 	error(EXIT_SUCCESS, 0, "%s:%d: %s", rulefile->d_name, linenumber, s);
 	return 0;
 }
 
 static void
-rules_parse(FILE *fp)
+rules_parse(FILE *fp, struct stack *stack)
 {
 	yyscan_t scanner;
 
 	yylex_init(&scanner);
 	yyset_in(fp, scanner);
-	while (yyparse(scanner));
+	while (yyparse(scanner, stack));
 	yylex_destroy(scanner);
 }
 
@@ -194,7 +192,7 @@ rules_filter(const struct dirent *ent)
 }
 
 int
-read_rules(const char *rulesdir)
+read_rules(const char *rulesdir, struct stack *stack)
 {
 	int i;
 	ssize_t n;
@@ -221,7 +219,7 @@ read_rules(const char *rulesdir)
 			return -1;
 		}
 
-		rules_parse(fp);
+		rules_parse(fp, stack);
 		fclose(fp);
 	}
 
@@ -231,22 +229,24 @@ read_rules(const char *rulesdir)
 }
 
 int
-main(int argc, char **argv)
+main(int argc __attribute__ ((__unused__)), char **argv)
 {
-	read_rules(argv[1]);
+	struct stack *s = atom_init();
 
-	print_atoms(root);
+	read_rules(argv[1], s);
+
+	print_atom(root);
 	printf("\n");
 
-	struct stack *s = calloc(1, sizeof(struct stack));
+	struct atom *result = eval_atom(root, s);
 
-	atom_init(s);
-
-	eval_atom(root, s);
+	print_atom(result);
 	printf("\n");
 
-	free_atom(root);
 	free_stack(s);
+
+	free_atom_recursive(result);
+	free_atom_recursive(root);
 
 	return 0;
 }

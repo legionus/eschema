@@ -29,7 +29,11 @@ union value {
 	struct pair *pair;
 };
 
+#define ATOM_CAR(x) x->v.pair->car
+#define ATOM_CDR(x) x->v.pair->cdr
+
 struct atom {
+	int refcount;
 	enum type t;
 	union value v;
 };
@@ -41,15 +45,20 @@ struct procs {
 };
 
 struct stack {
+	struct atom *atom_true;
+	struct atom *atom_false;
 	struct procs *procs;
 };
 
-void atom_init(struct stack *s);
-void print_atoms(struct atom *a);
+struct stack *atom_init(void);
+void print_atom(struct atom *a);
 const char *get_atom_type(enum type t);
 struct atom *eval_atom(struct atom *a, struct stack *s);
-void *free_atom(struct atom *a);
+void *free_atom_recursive(struct atom *a);
 void free_stack(struct stack *s);
+
+struct atom *atom_inc(struct atom *a);
+struct atom *atom_dec(struct atom *a);
 
 int register_builtin(struct stack *s, char *name, atom_proc_t proc);
 
