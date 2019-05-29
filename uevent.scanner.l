@@ -2,6 +2,7 @@
 %option outfile="uevent.scanner.c" header-file="uevent.scanner.h"
 %option bison-bridge
 %option stack
+%option noyy_top_state
 
 %{
 #include <stdlib.h>
@@ -28,8 +29,8 @@ stringovfl(void)
 
 %x STR
 
-True	true|True
-False	false|False
+True	#t(rue)?
+False	#f(alse)?
 
 %%
 \n			{

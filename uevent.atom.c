@@ -44,7 +44,7 @@ print_atoms(struct atom *a)
 			printf("\"%s\"", a->v.str);
 			break;
 		case T_BOOL:
-			printf("\"%s\"", a->v.num ? "true" : "false");
+			printf("#%c", a->v.num ? 't' : 'f');
 			break;
 		case T_SYMBOL:
 			printf("%s", a->v.str);
