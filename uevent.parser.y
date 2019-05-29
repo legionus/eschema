@@ -68,14 +68,14 @@ int yyerror(yyscan_t scanner, const char *s);
 input		:
 		{
 			struct atom *a = calloc(1, sizeof(struct atom));
-			a->t = T_S_EXPR;
+			a->t = T_BEGIN;
 			a->v.s_expr = NULL;
 			root = a;
 			$$ = a;
 		}
 		| s_expr input
 		{
-			assert($2->t == T_S_EXPR);
+			assert($2->t == T_S_EXPR || $2->t == T_BEGIN);
 			struct s_expr *s = calloc(1, sizeof(struct s_expr));
 			s->atom = $1;
 			s->next = $2->v.s_expr;
@@ -214,7 +214,7 @@ main(int argc, char **argv)
 
 	print_atoms(root);
 	printf("\n");
-
+/*
 	struct stack *s = calloc(1, sizeof(struct stack));
 
 	atom_init(s);
@@ -224,8 +224,9 @@ main(int argc, char **argv)
 	print_atoms(res);
 	printf("\n");
 
-	free(root);
 	free(res);
+*/
+	free(root);
 
 	return 0;
 }

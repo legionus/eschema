@@ -13,6 +13,7 @@ const char *
 get_atom_type(enum type t)
 {
 	switch (t) {
+		case T_BEGIN:  return "begin";
 		case T_BOOL:   return "boolean";
 		case T_ERROR:  return "error";
 		case T_NUMBER: return "number";
@@ -48,6 +49,17 @@ print_atoms(struct atom *a)
 			break;
 		case T_SYMBOL:
 			printf("%s", a->v.str);
+			break;
+		case T_BEGIN:
+			printf("{");
+			e = a->v.s_expr;
+			while (e) {
+				if (e != a->v.s_expr)
+					printf(" ");
+				print_atoms(e->atom);
+				e = e->next;
+			}
+			printf("}");
 			break;
 		case T_S_EXPR:
 			printf("(");
@@ -91,6 +103,7 @@ free_atom(struct atom *a)
 		case T_STRING:
 			free(a->v.str);
 			break;
+		case T_BEGIN:
 		case T_S_EXPR:
 			e = a->v.s_expr;
 			while (e) {
@@ -122,6 +135,7 @@ eval_atom(struct atom *a, struct stack *s)
 			return a;
 		case T_SYMBOL:
 			return resolve_proc(a->v.str, s);
+		case T_BEGIN:
 		case T_S_EXPR:
 			n = eval_atom(a->v.s_expr->atom, s);
 			if (n->t == T_ERROR)

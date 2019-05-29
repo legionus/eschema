@@ -5,3 +5,7 @@
 	)
 	(run "echo HERE")
 )
+(or
+	(not (eq "foo" "bar"))
+	(run "echo FOO")
+)

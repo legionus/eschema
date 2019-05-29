@@ -9,6 +9,7 @@ struct s_expr {
 };
 
 enum type {
+	T_BEGIN,
 	T_BOOL,
 	T_ERROR,
 	T_NUMBER,
