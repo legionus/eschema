@@ -66,18 +66,15 @@ print_atoms(struct atom *a)
 static struct atom *
 resolve_proc(char *sym, struct stack *s)
 {
-	struct atom *a = calloc(1, sizeof(struct atom));
 	struct procs *p = s->procs;
 
 	while (p) {
-		if (!strcmp(sym, p->sym)) {
-			a->t = T_PROC;
-			a->v.proc = p->proc;
-			return a;
-		}
+		if (!strcmp(sym, p->sym))
+			return p->atom;
 		p = p->next;
 	}
 
+	struct atom *a = calloc(1, sizeof(struct atom));
 	a->t = T_ERROR;
 	a->v.str = strdup("function not found");
 
@@ -127,8 +124,10 @@ eval_atom(struct atom *a, struct stack *s)
 			return resolve_proc(a->v.str, s);
 		case T_S_EXPR:
 			n = eval_atom(a->v.s_expr->atom, s);
+			if (n->t == T_ERROR)
+				error(EXIT_FAILURE, 0, "error: %s", a->v.s_expr->atom->v.str);
 			if (n->t != T_PROC)
-				error(EXIT_FAILURE, 0, "unknown command: %s", a->v.s_expr->atom->v.str);
+				error(EXIT_FAILURE, 0, "unexpected atom '%s'", get_atom_type(n->t));
 			r = n->v.proc(a->v.s_expr->next, s);
 			free_atom(n);
 			return r;
@@ -141,10 +140,12 @@ int
 register_builtin(struct stack *s, char *name, atom_proc_t proc)
 {
 	struct procs *n, *l;
-	
+
 	n = calloc(1, sizeof(struct procs));
 	n->sym = name;
-	n->proc = proc;
+	n->atom = calloc(1, sizeof(struct atom));
+	n->atom->t = T_PROC;
+	n->atom->v.proc = proc;
 
 	if (!s->procs) {
 		s->procs = n;

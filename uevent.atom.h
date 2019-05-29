@@ -35,7 +35,7 @@ struct atom {
 
 struct procs {
 	char *sym;
-	atom_proc_t proc;
+	struct atom *atom;
 	struct procs *next;
 };
 
