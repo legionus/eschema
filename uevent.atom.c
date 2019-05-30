@@ -7,11 +7,11 @@
 
 #include "uevent.h"
 
-void *
-free_atom_recursive(struct atom *a)
+void
+free_atom(struct atom *a)
 {
 	if (!a)
-		return NULL;
+		return;
 
 	switch (a->t) {
 		case T_ERROR:
@@ -21,10 +21,6 @@ free_atom_recursive(struct atom *a)
 			break;
 		case T_BEGIN:
 		case T_PAIR:
-			if (ATOM_CAR(a))
-				free_atom_recursive(ATOM_CAR(a));
-			if (ATOM_CDR(a))
-				free_atom_recursive(ATOM_CDR(a));
 			free(a->v.pair);
 			break;
 		default:
@@ -32,17 +28,36 @@ free_atom_recursive(struct atom *a)
 	}
 
 	free(a);
+}
 
-	return NULL;
+void
+free_atom_recursive(struct atom *a)
+{
+	if (!a)
+		return;
+
+	switch (a->t) {
+		case T_BEGIN:
+		case T_PAIR:
+			if (ATOM_CAR(a))
+				free_atom_recursive(ATOM_CAR(a));
+			if (ATOM_CDR(a))
+				free_atom_recursive(ATOM_CDR(a));
+			break;
+		default:
+			break;
+	}
+
+	free_atom(a);
 }
 
 void
 free_stack(struct stack *s)
 {
-	struct procs *n, *p = s->procs;
+	struct procs *p = s->procs;
 
 	while (p) {
-		n = p->next;
+		struct procs *n = p->next;
 		free_atom_recursive(p->atom);
 		free(p);
 		p = n;

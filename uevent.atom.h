@@ -57,7 +57,7 @@ struct stack *atom_init(void);
 void print_atom(struct atom *a);
 const char *get_atom_type(enum type t);
 struct atom *eval_atom(struct atom *a, struct stack *s);
-void *free_atom_recursive(struct atom *a);
+void free_atom_recursive(struct atom *a);
 void free_stack(struct stack *s);
 
 struct atom *atom_inc(struct atom *a);
