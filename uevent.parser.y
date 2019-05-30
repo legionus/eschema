@@ -38,8 +38,6 @@
 #include "uevent.scanner.h"
 #include "uevent.h"
 
-struct atom *root = NULL;
-
 struct dirent *rulefile;
 char str[4096];
 int linenumber = 1;
@@ -76,7 +74,7 @@ input		:
 			a->t = T_BEGIN;
 			a->v.pair = s;
 
-			root = a;
+			stack->root = a;
 
 			$$ = a;
 		}
@@ -231,22 +229,21 @@ read_rules(const char *rulesdir, struct stack *stack)
 int
 main(int argc __attribute__ ((__unused__)), char **argv)
 {
-	struct stack *s = atom_init();
+	struct stack *stack = atom_init();
 
-	read_rules(argv[1], s);
+	read_rules(argv[1], stack);
 
-	print_atom(root);
+	print_atom(stack->root);
 	printf("\n");
 
-	struct atom *result = eval_atom(root, s);
+	struct atom *result = eval_atom(stack->root, stack);
 
 	print_atom(result);
 	printf("\n");
 
-	free_stack(s);
+	free_stack(stack);
 
 	free_atom_recursive(result);
-	free_atom_recursive(root);
 
 	return 0;
 }

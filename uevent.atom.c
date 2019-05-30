@@ -51,6 +51,8 @@ free_stack(struct stack *s)
 	free_atom_recursive(s->atom_true);
 	free_atom_recursive(s->atom_false);
 
+	free_atom_recursive(s->root);
+
 	free(s);
 }
 

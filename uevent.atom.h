@@ -45,8 +45,11 @@ struct procs {
 };
 
 struct stack {
+	struct atom *root;
+
 	struct atom *atom_true;
 	struct atom *atom_false;
+
 	struct procs *procs;
 };
 
