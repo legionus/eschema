@@ -11,7 +11,6 @@ struct pair {
 enum type {
 	T_BEGIN,
 	T_BOOL,
-	T_ERROR,
 	T_NUMBER,
 	T_PROC,
 	T_STRING,
@@ -29,8 +28,8 @@ union value {
 	struct pair *pair;
 };
 
-#define ATOM_CAR(x) x->v.pair->car
-#define ATOM_CDR(x) x->v.pair->cdr
+#define ATOM_CAR(x) (x->v.pair->car)
+#define ATOM_CDR(x) (x->v.pair->cdr)
 
 struct atom {
 	int refcount;
@@ -53,15 +52,17 @@ struct stack {
 	struct procs *procs;
 };
 
-struct stack *atom_init(void);
 void print_atom(struct atom *a);
 const char *get_atom_type(enum type t);
-struct atom *eval_atom(struct atom *a, struct stack *s);
+struct atom *atom_eval(struct atom *a, struct stack *s);
 void free_atom_recursive(struct atom *a);
+
+struct stack *create_stack(void);
 void free_stack(struct stack *s);
 
+struct atom *atom_new(enum type t);
 struct atom *atom_inc(struct atom *a);
-struct atom *atom_dec(struct atom *a);
+void atom_dec(struct atom *a);
 
 int register_builtin(struct stack *s, char *name, atom_proc_t proc);
 

@@ -70,11 +70,10 @@ input		:
 			s->car = NULL;
 			s->cdr = NULL;
 
-			struct atom *a = calloc(1, sizeof(struct atom));
-			a->t = T_BEGIN;
+			struct atom *a = atom_new(T_BEGIN);
 			a->v.pair = s;
 
-			stack->root = a;
+			stack->root = atom_inc(a);
 
 			$$ = a;
 		}
@@ -84,14 +83,13 @@ input		:
 			assert($1->v.pair->cdr == NULL);
 
 			struct pair *s = calloc(1, sizeof(struct pair));
-			s->car = $2;
+			s->car = atom_inc($2);
 			s->cdr = NULL;
 
-			struct atom *a = calloc(1, sizeof(struct atom));
-			a->t = T_PAIR;
+			struct atom *a = atom_new(T_PAIR);
 			a->v.pair = s;
 
-			$1->v.pair->cdr = a;
+			$1->v.pair->cdr = atom_inc(a);
 
 			$$ = a;
 		}
@@ -105,11 +103,10 @@ args		: arg
 		{
 			// (cons arg '())
 			struct pair *s = calloc(1, sizeof(struct pair));
-			s->car = $1;
+			s->car = atom_inc($1);
 			s->cdr = NULL;
 
-			struct atom *a = calloc(1, sizeof(struct atom));
-			a->t = T_PAIR;
+			struct atom *a = atom_new(T_PAIR);
 			a->v.pair = s;
 
 			$$ = a;
@@ -120,11 +117,10 @@ args		: arg
 			assert($2->t == T_PAIR);
 
 			struct pair *s = calloc(1, sizeof(struct pair));
-			s->car = $1;
-			s->cdr = $2;
+			s->car = atom_inc($1);
+			s->cdr = atom_inc($2);
 
-			struct atom *a = calloc(1, sizeof(struct atom));
-			a->t = T_PAIR;
+			struct atom *a = atom_new(T_PAIR);
 			a->v.pair = s;
 
 			$$ = a;
@@ -133,22 +129,19 @@ args		: arg
 arg		: pair
 		| SYMBOL
 		{
-			struct atom *a = calloc(1, sizeof(struct atom));
-			a->t = T_SYMBOL;
+			struct atom *a = atom_new(T_SYMBOL);
 			a->v.str = $1;
 			$$ = a;
 		}
 		| STRING
 		{
-			struct atom *a = calloc(1, sizeof(struct atom));
-			a->t = T_STRING;
+			struct atom *a = atom_new(T_STRING);
 			a->v.str = $1;
 			$$ = a;
 		}
 		| NUMBER
 		{
-			struct atom *a = calloc(1, sizeof(struct atom));
-			a->t = T_NUMBER;
+			struct atom *a = atom_new(T_NUMBER);
 			a->v.num = $1;
 			$$ = a;
 		}
@@ -195,7 +188,7 @@ read_rules(const char *rulesdir, struct stack *stack)
 	int i;
 	ssize_t n;
 	char path[PATH_MAX];
-	struct dirent **namelist;
+	struct dirent **namelist = NULL;
 
 	error(EXIT_SUCCESS, 0, "load rules from %s", rulesdir);
 
@@ -229,21 +222,22 @@ read_rules(const char *rulesdir, struct stack *stack)
 int
 main(int argc __attribute__ ((__unused__)), char **argv)
 {
-	struct stack *stack = atom_init();
+	struct stack *stack = create_stack();
 
 	read_rules(argv[1], stack);
 
 	print_atom(stack->root);
 	printf("\n");
 
-	struct atom *result = eval_atom(stack->root, stack);
+	struct atom *result = atom_eval(stack->root, stack);
 
+	printf("result(%s): ", get_atom_type(result->t));
 	print_atom(result);
 	printf("\n");
 
-	free_stack(stack);
+	atom_dec(result);
 
-	free_atom_recursive(result);
+	free_stack(stack);
 
 	return 0;
 }

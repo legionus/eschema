@@ -7,14 +7,13 @@
 
 #include "uevent.h"
 
-void
+static void
 free_atom(struct atom *a)
 {
 	if (!a)
 		return;
 
 	switch (a->t) {
-		case T_ERROR:
 		case T_STRING:
 		case T_SYMBOL:
 			free(a->v.str);
@@ -30,19 +29,36 @@ free_atom(struct atom *a)
 	free(a);
 }
 
+struct atom *
+atom_new(enum type t)
+{
+	struct atom *a = calloc(1, sizeof(struct atom));
+	a->t = t;
+	return a;
+}
+
+struct atom *
+atom_inc(struct atom *a)
+{
+	if (a)
+		a->refcount++;
+	return a;
+}
+
 void
-free_atom_recursive(struct atom *a)
+atom_dec(struct atom *a)
 {
 	if (!a)
+		return;
+
+	if (--(a->refcount) > 0)
 		return;
 
 	switch (a->t) {
 		case T_BEGIN:
 		case T_PAIR:
-			if (ATOM_CAR(a))
-				free_atom_recursive(ATOM_CAR(a));
-			if (ATOM_CDR(a))
-				free_atom_recursive(ATOM_CDR(a));
+			atom_dec(ATOM_CAR(a));
+			atom_dec(ATOM_CDR(a));
 			break;
 		default:
 			break;
@@ -51,51 +67,12 @@ free_atom_recursive(struct atom *a)
 	free_atom(a);
 }
 
-void
-free_stack(struct stack *s)
-{
-	struct procs *p = s->procs;
-
-	while (p) {
-		struct procs *n = p->next;
-		free_atom_recursive(p->atom);
-		free(p);
-		p = n;
-	}
-
-	free_atom_recursive(s->atom_true);
-	free_atom_recursive(s->atom_false);
-
-	free_atom_recursive(s->root);
-
-	free(s);
-}
-
-struct atom *
-atom_inc(struct atom *a)
-{
-	a->refcount++;
-	return a;
-}
-
-struct atom *
-atom_dec(struct atom *a)
-{
-	a->refcount--;
-	if (!a->refcount) {
-		free_atom_recursive(a);
-		return NULL;
-	}
-	return a;
-}
-
 const char *
 get_atom_type(enum type t)
 {
 	switch (t) {
 		case T_BEGIN:  return "begin";
 		case T_BOOL:   return "boolean";
-		case T_ERROR:  return "error";
 		case T_NUMBER: return "number";
 		case T_PROC:   return "procedure";
 		case T_STRING: return "string";
@@ -113,25 +90,22 @@ print_atom(struct atom *a)
 
 	switch (a->t) {
 		case T_PROC:
-			printf("%p", a->v.proc);
-			break;
-		case T_ERROR:
-			printf("ERR:%s", a->v.str);
+			printf("%d:%p", a->refcount, a->v.proc);
 			break;
 		case T_NUMBER:
-			printf("%lld", a->v.num);
+			printf("%d:%lld", a->refcount, a->v.num);
 			break;
 		case T_STRING:
-			printf("\"%s\"", a->v.str);
+			printf("%d:\"%s\"", a->refcount, a->v.str);
 			break;
 		case T_BOOL:
-			printf("#%c", a->v.num ? 't' : 'f');
+			printf("%d:#%c", a->refcount, a->v.num ? 't' : 'f');
 			break;
 		case T_SYMBOL:
-			printf("%s", a->v.str);
+			printf("%d:%s", a->refcount, a->v.str);
 			break;
 		case T_BEGIN:
-			printf("{");
+			printf("%d:{", a->refcount);
 			n = ATOM_CDR(a);
 			while (n) {
 				if (n != ATOM_CDR(a))
@@ -142,7 +116,7 @@ print_atom(struct atom *a)
 			printf("}");
 			break;
 		case T_PAIR:
-			printf("(");
+			printf("%d:(", a->refcount);
 			n = a;
 			while (n) {
 				if (n != a)
@@ -166,11 +140,8 @@ resolve_proc(char *sym, struct stack *s)
 		p = p->next;
 	}
 
-	struct atom *a = calloc(1, sizeof(struct atom));
-	a->t = T_ERROR;
-	asprintf(&a->v.str, "symbol '%s' not found", sym);
-
-	return a;
+	error(EXIT_FAILURE, 0, "symbol '%s' not found", sym);
+	return NULL;
 }
 
 int
@@ -181,8 +152,7 @@ register_builtin(struct stack *s, char *name, atom_proc_t proc)
 	n = calloc(1, sizeof(struct procs));
 	n->sym = name;
 
-	n->atom = calloc(1, sizeof(struct atom));
-	n->atom->t = T_PROC;
+	n->atom = atom_new(T_PROC);
 	n->atom->v.proc = proc;
 
 	if (!s->procs) {
@@ -199,12 +169,11 @@ register_builtin(struct stack *s, char *name, atom_proc_t proc)
 }
 
 struct atom *
-eval_atom(struct atom *a, struct stack *s)
+atom_eval(struct atom *a, struct stack *s)
 {
-	struct atom *n, *r;
+	struct atom *n, *r = NULL;
 	switch (a->t) {
 		case T_BOOL:
-		case T_ERROR:
 		case T_NUMBER:
 		case T_PROC:
 		case T_STRING:
@@ -212,31 +181,28 @@ eval_atom(struct atom *a, struct stack *s)
 		case T_SYMBOL:
 			return resolve_proc(a->v.str, s);
 		case T_BEGIN:
-			n = ATOM_CDR(a);
-			while (n) {
-				r = eval_atom(ATOM_CAR(n), s);
+			while ((a = ATOM_CDR(a))) {
+				if (r)
+					atom_dec(r);
 
-				if (r->t == T_ERROR)
-					error(EXIT_FAILURE, 0, "error: %s", r->v.str);
+				r = atom_eval(ATOM_CAR(a), s);
 
+				printf("> ");
 				print_atom(r);
 				printf("\n");
-
-				n = ATOM_CDR(n);
 			}
-			return r;
+			if (r)
+				return r;
+			break;
 		case T_PAIR:
-			n = atom_inc(eval_atom(ATOM_CAR(a), s));
-
-			if (n->t == T_ERROR)
-				error(EXIT_FAILURE, 0, "error: %s", n->v.str);
+			n = atom_eval(ATOM_CAR(a), s);
 
 			if (n->t != T_PROC)
-				error(EXIT_FAILURE, 0, "unexpected atom '%s'", get_atom_type(n->t));
+				error(EXIT_FAILURE, 0, "procedure expected, got '%s'", get_atom_type(n->t));
 
 			r = n->v.proc(ATOM_CDR(a), s);
 
-			return r;
+			return atom_inc(r);
 	}
 
 	return NULL;
@@ -246,7 +212,7 @@ static struct atom *
 builtin_not(struct atom *a, struct stack *s)
 {
 	struct atom *r = s->atom_false;
-	struct atom *n = eval_atom(a, s);
+	struct atom *n = atom_eval(a, s);
 
 	if (n->t == T_BOOL && n->v.num)
 		r = s->atom_true;
@@ -257,79 +223,86 @@ builtin_not(struct atom *a, struct stack *s)
 static struct atom *
 builtin_and(struct atom *a, struct stack *s)
 {
-	struct atom *r = s->atom_true;
 	struct atom *e = a;
 
 	while (e) {
 		if (e->t != T_PAIR)
 			return e;
 
-		struct atom *n = eval_atom(ATOM_CAR(e), s);
+		struct atom *n = atom_eval(ATOM_CAR(e), s);
 
-		if (n->t == T_ERROR)
-			error(EXIT_FAILURE, 0, "error: %s", n->v.str);
+		if (n->t == T_BOOL && !n->v.num)
+			return n;
 
-		if (n->t == T_BOOL) {
-			if (!n->v.num)
-				return n;
-		} else {
-//			if (r != ATOM_TRUE)
-//				free_atom_recursive(r);
-			r = n;
-		}
+		if (!ATOM_CDR(e))
+			return n;
 
 		e = ATOM_CDR(e);
 	}
 
-	return r;
+	return s->atom_true;
 }
 
 static struct atom *
 builtin_or(struct atom *a, struct stack *s)
 {
-	struct atom *r = s->atom_false;
 	struct atom *e = a;
 
 	while (e) {
 		if (e->t != T_PAIR)
 			return e;
 
-		struct atom *n = eval_atom(ATOM_CAR(e), s);
+		struct atom *n = atom_eval(ATOM_CAR(e), s);
 
-		if (n->t == T_ERROR)
-			error(EXIT_FAILURE, 0, "error: %s", n->v.str);
+		if (n->t == T_BOOL && n->v.num)
+			return n;
 
-		if (n->t == T_BOOL) {
-			if (n->v.num)
-				return n;
-		} else {
-//			if (r != ATOM_FALSE)
-//				free_atom_recursive(r);
-			r = n;
-		}
+		if (!ATOM_CDR(e))
+			return n;
 
 		e = ATOM_CDR(e);
 	}
 
-	return r;
+	return s->atom_false;
 }
 
 struct stack *
-atom_init(void)
+create_stack(void)
 {
 	struct stack *s = calloc(1, sizeof(struct stack));
 
-	s->atom_true = calloc(1, sizeof(struct atom));
-	s->atom_true->t = T_BOOL;
+	s->atom_true = atom_new(T_BOOL);
 	s->atom_true->v.num = 1;
 
-	s->atom_false = calloc(1, sizeof(struct atom));
-	s->atom_false->t = T_BOOL;
+	atom_inc(s->atom_true);
+
+	s->atom_false = atom_new(T_BOOL);
 	s->atom_false->v.num = 0;
+
+	atom_inc(s->atom_false);
 
 	register_builtin(s, "not", builtin_not);
 	register_builtin(s, "and", builtin_and);
 	register_builtin(s, "or",  builtin_or);
 
 	return s;
+}
+
+void
+free_stack(struct stack *s)
+{
+	struct procs *p = s->procs;
+
+	while (p) {
+		struct procs *n = p->next;
+		atom_dec(p->atom);
+		free(p);
+		p = n;
+	}
+
+	atom_dec(s->root);
+	atom_dec(s->atom_true);
+	atom_dec(s->atom_false);
+
+	free(s);
 }
