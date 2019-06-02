@@ -82,12 +82,7 @@ input		:
 			assert($1->t == T_PAIR || $1->t == T_BEGIN);
 			assert($1->v.pair->cdr == NULL);
 
-			struct pair *s = calloc(1, sizeof(struct pair));
-			s->car = atom_inc($2);
-			s->cdr = NULL;
-
-			struct atom *a = atom_new(T_PAIR);
-			a->v.pair = s;
+			struct atom *a = atom_pair(atom_inc($2), NULL);
 
 			$1->v.pair->cdr = atom_inc(a);
 
@@ -102,28 +97,13 @@ pair		: LEFT_BRACKET args RIGHT_BRACKET
 args		: arg
 		{
 			// (cons arg '())
-			struct pair *s = calloc(1, sizeof(struct pair));
-			s->car = atom_inc($1);
-			s->cdr = NULL;
-
-			struct atom *a = atom_new(T_PAIR);
-			a->v.pair = s;
-
-			$$ = a;
+			$$ = atom_pair(atom_inc($1), NULL);
 		}
 		| arg args
 		{
 			// (cons arg args)
 			assert($2->t == T_PAIR);
-
-			struct pair *s = calloc(1, sizeof(struct pair));
-			s->car = atom_inc($1);
-			s->cdr = atom_inc($2);
-
-			struct atom *a = atom_new(T_PAIR);
-			a->v.pair = s;
-
-			$$ = a;
+			$$ = atom_pair(atom_inc($1), atom_inc($2));
 		}
 		;
 arg		: pair

@@ -55,15 +55,13 @@ struct stack {
 void print_atom(struct atom *a);
 const char *get_atom_type(enum type t);
 struct atom *atom_eval(struct atom *a, struct stack *s);
-void free_atom_recursive(struct atom *a);
 
 struct stack *create_stack(void);
 void free_stack(struct stack *s);
 
+struct atom *atom_pair(struct atom *car, struct atom *cdr);
 struct atom *atom_new(enum type t);
 struct atom *atom_inc(struct atom *a);
-void atom_dec(struct atom *a);
-
-int register_builtin(struct stack *s, char *name, atom_proc_t proc);
+struct atom *atom_dec(struct atom *a);
 
 #endif /* _UEVENT_ATOM_H_ */

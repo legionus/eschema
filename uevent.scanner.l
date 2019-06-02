@@ -28,12 +28,17 @@ stringovfl(void)
 %}
 
 %x STR
+%x COM
 
-True	#t(rue)?
-False	#f(alse)?
+True    #t(rue)?
+False   #f(alse)?
+Symbol  [A-Za-z0-9\?\+\-]+
 
 %%
 \n			{
+				linenumber++;
+			}
+\;.*\n			{
 				linenumber++;
 			}
 [ \t]			;
@@ -55,7 +60,7 @@ False	#f(alse)?
 				yylval->num = strtoll(yytext, NULL, 0);
 				return NUMBER;
 			}
-[A-Za-z0-9]+		{
+{Symbol}		{
 				yylval->str = strdup(yytext);
 				return SYMBOL;
 			}
