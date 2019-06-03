@@ -176,7 +176,7 @@ add_symbol(struct stack *s, char *name, atom_proc_t proc)
 struct atom *
 atom_eval(struct atom *a, struct stack *s)
 {
-	struct atom *n, *r = NULL;
+	struct atom *n;
 	switch (a->t) {
 		case T_BOOL:
 		case T_NUMBER:
@@ -187,26 +187,18 @@ atom_eval(struct atom *a, struct stack *s)
 			return resolve_symbol(a->v.str, s);
 		case T_BEGIN:
 			while ((a = ATOM_CDR(a))) {
-				r = atom_eval(ATOM_CAR(a), s);
-
+				n = atom_eval(ATOM_CAR(a), s);
 				printf("> ");
-				print_atom(r);
+				print_atom(n);
 				printf("\n");
 			}
-			if (r)
-				return atom_inc(r);
-			break;
+			return atom_inc(n);
 		case T_PAIR:
 			n = atom_eval(ATOM_CAR(a), s);
-
 			if (n->t != T_PROC)
 				error(EXIT_FAILURE, 0, "procedure expected, got '%s'", get_atom_type(n->t));
-
-			r = n->v.proc(ATOM_CDR(a), s);
-
-			return r;
+			return n->v.proc(ATOM_CDR(a), s);
 	}
-
 	return NULL;
 }
 
@@ -225,36 +217,34 @@ proc_not(struct atom *a, struct stack *s)
 static struct atom *
 proc_is_symbol(struct atom *a, struct stack *s)
 {
-	a = ATOM_CAR(a);
-	return (a && a->t == T_SYMBOL) ? s->atom_true : s->atom_false;
+	return (a && ATOM_CAR(a) && ATOM_CAR(a)->t == T_SYMBOL) ? s->atom_true : s->atom_false;
 }
 
 static struct atom *
 proc_is_boolean(struct atom *a, struct stack *s)
 {
 	a = ATOM_CAR(a);
-	return (a && a->t == T_BOOL) ? s->atom_true : s->atom_false;
+	return (a && ATOM_CAR(a) && ATOM_CAR(a)->t == T_BOOL) ? s->atom_true : s->atom_false;
 }
 
 static struct atom *
 proc_is_string(struct atom *a, struct stack *s)
 {
-	a = ATOM_CAR(a);
-	return (a && a->t == T_STRING) ? s->atom_true : s->atom_false;
+	return (a && ATOM_CAR(a) && ATOM_CAR(a)->t == T_STRING) ? s->atom_true : s->atom_false;
 }
 
 static struct atom *
 proc_is_number(struct atom *a, struct stack *s)
 {
 	a = ATOM_CAR(a);
-	return (a && a->t == T_NUMBER) ? s->atom_true : s->atom_false;
+	return (a && ATOM_CAR(a) && ATOM_CAR(a)->t == T_NUMBER) ? s->atom_true : s->atom_false;
 }
 
 static struct atom *
 proc_is_procedure(struct atom *a, struct stack *s)
 {
 	a = ATOM_CAR(a);
-	return (a && a->t == T_PROC) ? s->atom_true : s->atom_false;
+	return (a && ATOM_CAR(a) && ATOM_CAR(a)->t == T_PROC) ? s->atom_true : s->atom_false;
 }
 
 static struct atom *
@@ -271,6 +261,9 @@ proc_and(struct atom *a, struct stack *s)
 
 		if (!ATOM_CDR(a))
 			return n;
+
+		if (!n->refcount)
+			atom_dec(n);
 
 		a = ATOM_CDR(a);
 	}
@@ -293,6 +286,9 @@ proc_or(struct atom *a, struct stack *s)
 		if (!ATOM_CDR(a))
 			return n;
 
+		if (!n->refcount)
+			atom_dec(n);
+
 		a = ATOM_CDR(a);
 	}
 
@@ -302,27 +298,123 @@ proc_or(struct atom *a, struct stack *s)
 static struct atom *
 proc_add(struct atom *a, struct stack *s)
 {
-	int pos = 1;
+	int pos = 0;
 	long long int v = 0;
 
 	while (a) {
+		pos++;
+
 		struct atom *n = atom_eval(ATOM_CAR(a), s);
 
 		if (n->t != T_NUMBER)
-			error(EXIT_FAILURE, 0, "In procedure +: Wrong type argument in position %d", pos);
+			error(EXIT_FAILURE, 0, "In procedure '+': Wrong type argument in position %d", pos);
 
 		v += n->v.num;
 
+		if (!n->refcount)
+			atom_dec(n);
+
 		a = ATOM_CDR(a);
-		pos++;
 	}
 
 	a = atom_new(T_NUMBER);
 	a->v.num = v;
 
-	ATOM_CAR(s->root) = atom_pair(a, ATOM_CAR(s->root));
+	return a;
+}
 
-	return atom_inc(a);
+static struct atom *
+proc_multiply(struct atom *a, struct stack *s)
+{
+	int pos = 0;
+	long long int v = 1;
+
+	while (a) {
+		pos++;
+
+		struct atom *n = atom_eval(ATOM_CAR(a), s);
+
+		if (n->t != T_NUMBER)
+			error(EXIT_FAILURE, 0, "In procedure '+': Wrong type argument in position %d", pos);
+
+		v *= n->v.num;
+
+		if (!n->refcount)
+			atom_dec(n);
+
+		a = ATOM_CDR(a);
+	}
+
+	a = atom_new(T_NUMBER);
+	a->v.num = v;
+
+	return a;
+}
+
+static struct atom *
+proc_sub(struct atom *a, struct stack *s)
+{
+	int pos = 0;
+	long long int v = 0;
+
+	while (a) {
+		pos++;
+
+		struct atom *n = atom_eval(ATOM_CAR(a), s);
+
+		if (n->t != T_NUMBER)
+			error(EXIT_FAILURE, 0, "In procedure '-': Wrong type argument in position %d", pos);
+
+		if (pos == 1)
+			v = n->v.num;
+		else
+			v -= n->v.num;
+
+		if (!n->refcount)
+			atom_dec(n);
+
+		a = ATOM_CDR(a);
+	}
+
+	a = atom_new(T_NUMBER);
+	a->v.num = (pos == 1) ? -v : v;
+
+	return a;
+}
+
+static struct atom *
+proc_if(struct atom *a, struct stack *s)
+{
+	struct atom *n, *test, *if_true, *if_false = NULL;
+
+	test = ATOM_CAR(a);
+
+	if (!ATOM_CDR(a))
+		error(EXIT_FAILURE, 0, "source expression failed to find consequent expression");
+
+	a = ATOM_CDR(a);
+
+	if_true = ATOM_CAR(a);
+
+	if (ATOM_CDR(a))
+		if_false = ATOM_CDR(a);
+
+	n = atom_eval(test, s);
+
+	if (n->t != T_BOOL || (n->t == T_BOOL && n->v.num)) {
+		if (!n->refcount)
+			atom_dec(n);
+
+		return atom_eval(if_true, s);
+	}
+
+	if (!n->refcount)
+		atom_dec(n);
+
+	if (if_false)
+		return atom_eval(if_false, s);
+
+	return s->atom_true;
 }
 
 struct stack *
@@ -340,16 +432,18 @@ create_stack(void)
 
 	atom_inc(s->atom_false);
 
-	add_symbol(s, "not", proc_not);
-	add_symbol(s, "and", proc_and);
-	add_symbol(s, "or",  proc_or);
-	add_symbol(s, "symbol?", proc_is_symbol);
-	add_symbol(s, "boolean?", proc_is_boolean);
-	add_symbol(s, "string?", proc_is_string);
-	add_symbol(s, "number?", proc_is_number);
+	add_symbol(s, "not",        proc_not);
+	add_symbol(s, "and",        proc_and);
+	add_symbol(s, "or",         proc_or);
+	add_symbol(s, "if",         proc_if);
+	add_symbol(s, "symbol?",    proc_is_symbol);
+	add_symbol(s, "boolean?",   proc_is_boolean);
+	add_symbol(s, "string?",    proc_is_string);
+	add_symbol(s, "number?",    proc_is_number);
 	add_symbol(s, "procedure?", proc_is_procedure);
-
-	add_symbol(s, "+", proc_add);
+	add_symbol(s, "+",          proc_add);
+	add_symbol(s, "-",          proc_sub);
+	add_symbol(s, "*",          proc_multiply);
 
 	return s;
 }
