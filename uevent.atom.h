@@ -19,12 +19,17 @@ enum type {
 };
 
 struct stack;
-typedef struct atom *(*atom_proc_t)(struct atom *, struct stack *);
+typedef struct atom *(*atom_proc_t)(const char *name, struct atom *, struct stack *);
+
+struct proc {
+	const char *name;
+	atom_proc_t func;
+};
 
 union value {
 	long long int num;
 	char *str;
-	atom_proc_t proc;
+	struct proc *proc;
 	struct pair *pair;
 };
 
@@ -54,6 +59,7 @@ struct stack {
 
 void print_atom(struct atom *a);
 const char *get_atom_type(enum type t);
+
 struct atom *atom_eval(struct atom *a, struct stack *s);
 
 struct stack *create_stack(void);

@@ -18,6 +18,9 @@ atom_free(struct atom *a)
 		case T_SYMBOL:
 			free(a->v.str);
 			break;
+		case T_PROC:
+			free(a->v.proc);
+			break;
 		case T_BEGIN:
 		case T_PAIR:
 			free(a->v.pair);
@@ -158,7 +161,7 @@ resolve_symbol(char *sym, struct stack *s)
 }
 
 static void
-add_symbol(struct stack *s, char *name, atom_proc_t proc)
+add_symbol(struct stack *s, char *name, atom_proc_t func)
 {
 	struct procs *n = calloc(1, sizeof(struct procs));
 
@@ -166,7 +169,10 @@ add_symbol(struct stack *s, char *name, atom_proc_t proc)
 	n->next = s->procs;
 
 	n->atom = atom_new(T_PROC);
-	n->atom->v.proc = proc;
+	n->atom->v.proc = calloc(1, sizeof(struct proc));
+
+	n->atom->v.proc->name = name;
+	n->atom->v.proc->func = func;
 
 	atom_inc(n->atom);
 
@@ -197,13 +203,13 @@ atom_eval(struct atom *a, struct stack *s)
 			n = atom_eval(ATOM_CAR(a), s);
 			if (n->t != T_PROC)
 				error(EXIT_FAILURE, 0, "procedure expected, got '%s'", get_atom_type(n->t));
-			return n->v.proc(ATOM_CDR(a), s);
+			return n->v.proc->func(n->v.proc->name, ATOM_CDR(a), s);
 	}
 	return NULL;
 }
 
 static struct atom *
-proc_not(struct atom *a, struct stack *s)
+proc_not(const char *name __attribute__((unused)), struct atom *a, struct stack *s)
 {
 	struct atom *r = s->atom_false;
 	struct atom *n = atom_eval(a, s);
@@ -215,40 +221,23 @@ proc_not(struct atom *a, struct stack *s)
 }
 
 static struct atom *
-proc_is_symbol(struct atom *a, struct stack *s)
+proc_is_type(const char *name, struct atom *a, struct stack *s)
 {
-	return (a && ATOM_CAR(a) && ATOM_CAR(a)->t == T_SYMBOL) ? s->atom_true : s->atom_false;
+	if (!strcmp(name, "symbol?"))
+		return (a && ATOM_CAR(a) && ATOM_CAR(a)->t == T_SYMBOL) ? s->atom_true : s->atom_false;
+	if (!strcmp(name, "boolean?"))
+		return (a && ATOM_CAR(a) && ATOM_CAR(a)->t == T_BOOL) ? s->atom_true : s->atom_false;
+	if (!strcmp(name, "string?"))
+		return (a && ATOM_CAR(a) && ATOM_CAR(a)->t == T_STRING) ? s->atom_true : s->atom_false;
+	if (!strcmp(name, "number?"))
+		return (a && ATOM_CAR(a) && ATOM_CAR(a)->t == T_NUMBER) ? s->atom_true : s->atom_false;
+	if (!strcmp(name, "procedure?"))
+		return (a && ATOM_CAR(a) && ATOM_CAR(a)->t == T_PROC) ? s->atom_true : s->atom_false;
+	return s->atom_false;
 }
 
 static struct atom *
-proc_is_boolean(struct atom *a, struct stack *s)
-{
-	a = ATOM_CAR(a);
-	return (a && ATOM_CAR(a) && ATOM_CAR(a)->t == T_BOOL) ? s->atom_true : s->atom_false;
-}
-
-static struct atom *
-proc_is_string(struct atom *a, struct stack *s)
-{
-	return (a && ATOM_CAR(a) && ATOM_CAR(a)->t == T_STRING) ? s->atom_true : s->atom_false;
-}
-
-static struct atom *
-proc_is_number(struct atom *a, struct stack *s)
-{
-	a = ATOM_CAR(a);
-	return (a && ATOM_CAR(a) && ATOM_CAR(a)->t == T_NUMBER) ? s->atom_true : s->atom_false;
-}
-
-static struct atom *
-proc_is_procedure(struct atom *a, struct stack *s)
-{
-	a = ATOM_CAR(a);
-	return (a && ATOM_CAR(a) && ATOM_CAR(a)->t == T_PROC) ? s->atom_true : s->atom_false;
-}
-
-static struct atom *
-proc_and(struct atom *a, struct stack *s)
+proc_and(const char *name __attribute__((unused)), struct atom *a, struct stack *s)
 {
 	while (a) {
 		if (a->t != T_PAIR)
@@ -272,7 +261,7 @@ proc_and(struct atom *a, struct stack *s)
 }
 
 static struct atom *
-proc_or(struct atom *a, struct stack *s)
+proc_or(const char *name __attribute__((unused)), struct atom *a, struct stack *s)
 {
 	while (a) {
 		if (a->t != T_PAIR)
@@ -296,7 +285,7 @@ proc_or(struct atom *a, struct stack *s)
 }
 
 static struct atom *
-proc_add(struct atom *a, struct stack *s)
+proc_add(const char *name, struct atom *a, struct stack *s)
 {
 	int pos = 0;
 	long long int v = 0;
@@ -307,7 +296,7 @@ proc_add(struct atom *a, struct stack *s)
 		struct atom *n = atom_eval(ATOM_CAR(a), s);
 
 		if (n->t != T_NUMBER)
-			error(EXIT_FAILURE, 0, "In procedure '+': Wrong type argument in position %d", pos);
+			error(EXIT_FAILURE, 0, "In procedure '%s': Wrong type argument in position %d", name, pos);
 
 		v += n->v.num;
 
@@ -324,7 +313,7 @@ proc_add(struct atom *a, struct stack *s)
 }
 
 static struct atom *
-proc_multiply(struct atom *a, struct stack *s)
+proc_multiply(const char *name, struct atom *a, struct stack *s)
 {
 	int pos = 0;
 	long long int v = 1;
@@ -335,7 +324,7 @@ proc_multiply(struct atom *a, struct stack *s)
 		struct atom *n = atom_eval(ATOM_CAR(a), s);
 
 		if (n->t != T_NUMBER)
-			error(EXIT_FAILURE, 0, "In procedure '+': Wrong type argument in position %d", pos);
+			error(EXIT_FAILURE, 0, "In procedure '%s': Wrong type argument in position %d", name, pos);
 
 		v *= n->v.num;
 
@@ -352,7 +341,7 @@ proc_multiply(struct atom *a, struct stack *s)
 }
 
 static struct atom *
-proc_sub(struct atom *a, struct stack *s)
+proc_sub(const char *name, struct atom *a, struct stack *s)
 {
 	int pos = 0;
 	long long int v = 0;
@@ -363,7 +352,7 @@ proc_sub(struct atom *a, struct stack *s)
 		struct atom *n = atom_eval(ATOM_CAR(a), s);
 
 		if (n->t != T_NUMBER)
-			error(EXIT_FAILURE, 0, "In procedure '-': Wrong type argument in position %d", pos);
+			error(EXIT_FAILURE, 0, "In procedure '%s': Wrong type argument in position %d", name, pos);
 
 		if (pos == 1)
 			v = n->v.num;
@@ -383,7 +372,7 @@ proc_sub(struct atom *a, struct stack *s)
 }
 
 static struct atom *
-proc_if(struct atom *a, struct stack *s)
+proc_if(const char *name __attribute__((unused)), struct atom *a, struct stack *s)
 {
 	struct atom *n, *test, *if_true, *if_false = NULL;
 
@@ -436,11 +425,11 @@ create_stack(void)
 	add_symbol(s, "and",        proc_and);
 	add_symbol(s, "or",         proc_or);
 	add_symbol(s, "if",         proc_if);
-	add_symbol(s, "symbol?",    proc_is_symbol);
-	add_symbol(s, "boolean?",   proc_is_boolean);
-	add_symbol(s, "string?",    proc_is_string);
-	add_symbol(s, "number?",    proc_is_number);
-	add_symbol(s, "procedure?", proc_is_procedure);
+	add_symbol(s, "symbol?",    proc_is_type);
+	add_symbol(s, "boolean?",   proc_is_type);
+	add_symbol(s, "string?",    proc_is_type);
+	add_symbol(s, "number?",    proc_is_type);
+	add_symbol(s, "procedure?", proc_is_type);
 	add_symbol(s, "+",          proc_add);
 	add_symbol(s, "-",          proc_sub);
 	add_symbol(s, "*",          proc_multiply);
